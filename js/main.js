@@ -99,7 +99,16 @@
           global.setTimeout(() => {
             const G = HS.Game;
             const t = G.hiders.filter((h) => !h.found)[idx];
-            if (t) { G.seeker.x = t.x + 0.5; G.seeker.z = t.z; G.catchHack = t; }
+            // 自检用：把玩家挪到目标身边并接管抓取；同时把目标钉在原地（hiding + 无躲藏点），
+            // 否则它会被惊动跑掉，让抓取流程测试变得不稳定。
+            if (t) {
+              G.seeker.x = t.x + 0.5;
+              G.seeker.z = t.z;
+              G.catchHack = t;
+              t.state = 'hiding';
+              t.speed = 0;
+              t.spot = null;
+            }
           }, 900);
         }
         global.HS_DEBUG = true;
@@ -111,7 +120,10 @@
               new global.THREE.SphereGeometry(0.22, 12, 10),
               new global.THREE.MeshBasicMaterial({ color: 0xff2f6d })
             );
-            m.position.set(G.seeker.x + Math.sin(G.seeker.yaw) * 2, 0.5, G.seeker.z + Math.cos(G.seeker.yaw) * 2);
+            m.position.set(
+              G.seeker.x - G.level3d.offX + Math.sin(G.seeker.yaw) * 2, 0.5,
+              G.seeker.z - G.level3d.offZ + Math.cos(G.seeker.yaw) * 2
+            );
             G.scene.add(m);
           }, 1200);
         }

@@ -101,7 +101,9 @@
       const cX = (maze.w - 1) / 2, cZ = (maze.h - 1) / 2;
       const faceYaw = Math.atan2(cX - startCell.x, cZ - startCell.y);
       const seeker = global.HS.Characters.buildSeeker({});
-      seeker.position.set(startCell.x, 0, startCell.y);
+      // 注意：迷宫几何整体平移了 (-offX,0,-offZ)，角色必须用同样的世界坐标，
+      // 否则会出现“人物站在迷宫外面草地”的问题。
+      seeker.position.set(startCell.x - built.offX, 0, startCell.y - built.offZ);
       seeker.rotation.y = faceYaw;
       this.scene.add(seeker);
       this.seeker = {
@@ -115,7 +117,7 @@
       for (let i = 0; i < hidersCount; i++) {
         const cell = this._spawnHiderCell(startCell);
         const obj = global.HS.Characters.buildHider(U.makeRng(seed + i * 977), i);
-        obj.position.set(cell.x, 0, cell.y);
+        obj.position.set(cell.x - built.offX, 0, cell.y - built.offZ);
         this.scene.add(obj);
         const spot = this._nearestSpot(cell.x, cell.y, null);
         this.hiders.push({
@@ -377,7 +379,7 @@
       }
 
       // 模型
-      p.obj.position.set(p.x, 0, p.z);
+      p.obj.position.set(p.x - this.level3d.offX, 0, p.z - this.level3d.offZ);
       p.obj.rotation.y = p.yaw;
       global.HS.Characters.animate(p.obj, {
         dt, speed: p.speed, maxSpeed: CFG.PLAYER_SPEED, running: sprint
@@ -441,7 +443,8 @@
         const near = d < 1.35;
         const heard = d < noiseR && this.noise > 1.2;
         const seen = los && d < (p.sprinting ? 9 : 5.5);
-        if (h.state !== 'flee' && (near || heard || seen)) {
+        const pinned = this.catchHack === h; // 自检抓取中：不再逃跑
+        if (!pinned && h.state !== 'flee' && (near || heard || seen)) {
           if (h.state !== 'flee') {
             h.state = 'flee';
             h.stateT = 0;
@@ -576,7 +579,7 @@
         }
 
         h.noisy = h.speed > 1.6;
-        h.obj.position.set(h.x, 0, h.z);
+        h.obj.position.set(h.x - this.level3d.offX, 0, h.z - this.level3d.offZ);
         h.obj.rotation.y = h.yaw;
         global.HS.Characters.animate(h.obj, {
           dt, speed: h.speed, maxSpeed: CFG.HIDER_SPRINT, crouch,
@@ -662,7 +665,8 @@
         // 抓取过程中的小星星，读条越满越密集
         if (Math.random() < dt * (7 + target.grab * 14)) {
           this.particles.burst(
-            target.x + (Math.random() - 0.5) * 0.6, 0.8, target.z + (Math.random() - 0.5) * 0.6,
+            target.x - this.level3d.offX + (Math.random() - 0.5) * 0.6, 0.8,
+            target.z - this.level3d.offZ + (Math.random() - 0.5) * 0.6,
             1, 0xffe9a8, { spread: 0.5, up: 1.5, life: 0.5 }
           );
         }
@@ -673,7 +677,7 @@
           ring.visible = true;
           const k = Math.min(1, target.grab / CFG.GRAB_TIME);
           const size = U.lerp(2.2, 0.85, k);
-          ring.position.set(target.x, 0.32, target.z);
+          ring.position.set(target.x - this.level3d.offX, 0.32, target.z - this.level3d.offZ);
           ring.scale.set(size, size, 1);
           ring.material.opacity = 0.5 + 0.5 * k;
           ring.material.color.setHex(k > 0.75 ? 0xffd166 : 0x7fe7d6);
@@ -689,7 +693,7 @@
           // 提示可抓
           if (ring) {
             ring.visible = true;
-            ring.position.set(target.x, 0.3, target.z);
+            ring.position.set(target.x - this.level3d.offX, 0.3, target.z - this.level3d.offZ);
             const size = 2.1 + Math.sin(this.time * 4) * 0.12;
             ring.scale.set(size, size, 1);
             ring.material.opacity = 0.55;
@@ -708,9 +712,10 @@
       this.stats.found++;
       if (h.spot) { h.spot.taken = Math.max(0, (h.spot.taken || 0) - 1); h.spot = null; }
       global.HS.audio.caught();
-      this.particles.burst(h.x, 0.9, h.z, 34, 0xffd166, { spread: 2.0, up: 3.2, life: 1.1, jitter: 0.18 });
-      this.particles.ringPulse(h.x, h.z, 0xffd166, 0.5, 3.4, 0.75);
-      this.particles.spawnText('抓到啦！', h.x, 1.9, h.z, '#ffe9a8', 1);
+      const wx = h.x - this.level3d.offX, wz = h.z - this.level3d.offZ;
+      this.particles.burst(wx, 0.9, wz, 34, 0xffd166, { spread: 2.0, up: 3.2, life: 1.1, jitter: 0.18 });
+      this.particles.ringPulse(wx, wz, 0xffd166, 0.5, 3.4, 0.75);
+      this.particles.spawnText('抓到啦！', wx, 1.9, wz, '#ffe9a8', 1);
       this._toast(`抓到第 ${this.stats.found} 个！还剩 ${this.stats.total - this.stats.found} 个`, 'good');
       this._syncHud();
     },
@@ -731,8 +736,8 @@
       const cam = this.camera;
       if (!this.seeker) return;
       const f = dt ? Math.min(1, dt * 3.2) : 1;
-      const targetX = this.seeker.x * 0.62;
-      const targetZ = this.seeker.z * 0.62;
+      const targetX = this.seeker.x - this.level3d.offX;
+      const targetZ = this.seeker.z - this.level3d.offZ;
       this._camX = U.lerp(this._camX == null ? targetX : this._camX, targetX, f);
       this._camZ = U.lerp(this._camZ == null ? targetZ : this._camZ, targetZ, f);
       const size = cam.userData.viewSize || 32;
@@ -776,14 +781,15 @@
       };
       if (win) {
         global.HS.audio.win();
-        this.particles.spawnText('全部抓到！', this.seeker.x, 2.6, this.seeker.z, '#a8ffcf', 1.45);
+        const sx = this.seeker.x - this.level3d.offX, sz = this.seeker.z - this.level3d.offZ;
+        this.particles.spawnText('全部抓到！', sx, 2.6, sz, '#a8ffcf', 1.45);
         for (let i = 0; i < 5; i++) {
-          this.particles.ringPulse(this.seeker.x + (Math.random() - 0.5) * 3, this.seeker.z + (Math.random() - 0.5) * 3, 0x7fe7d6, 0.4, 3 + Math.random() * 2, 0.8 + i * 0.15);
+          this.particles.ringPulse(sx + (Math.random() - 0.5) * 3, sz + (Math.random() - 0.5) * 3, 0x7fe7d6, 0.4, 3 + Math.random() * 2, 0.8 + i * 0.15);
         }
-        this.particles.burst(this.seeker.x, 1.4, this.seeker.z, 120, 0x7fe7d6, { spread: 4.5, up: 6, life: 1.6, jitter: 0.35 });
+        this.particles.burst(sx, 1.4, sz, 120, 0x7fe7d6, { spread: 4.5, up: 6, life: 1.6, jitter: 0.35 });
       } else {
         global.HS.audio.lose();
-        this.particles.spawnText('时间到…', this.seeker.x, 2.4, this.seeker.z, '#ffb3b3', 1.3);
+        this.particles.spawnText('时间到…', this.seeker.x - this.level3d.offX, 2.4, this.seeker.z - this.level3d.offZ, '#ffb3b3', 1.3);
       }
       this._syncHud();
     },
