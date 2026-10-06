@@ -150,6 +150,20 @@ html, body {
   backdrop-filter: blur(8px);
 }
 #toast .msg.warn { color: #ffd0d0; border-color: rgba(255, 107, 107, 0.5); }
+/* 撞到障碍物的提示：暖黄色 + 轻微抖动，一眼就能看到 */
+#toast .msg.block {
+  color: #ffedc4;
+  border-color: rgba(255, 209, 102, 0.6);
+  background: rgba(38, 27, 8, 0.82);
+  animation: toast-in 0.24s cubic-bezier(0.2, 1.4, 0.5, 1), shake 0.42s ease 0.12s, toast-out 0.4s ease 1.7s forwards;
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
 #toast .msg.good { color: #d6ffe6; border-color: rgba(126, 231, 214, 0.5); }
 #toast .msg.gold { color: #fff1c9; border-color: rgba(255, 209, 102, 0.55); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-12px) scale(0.9); } to { opacity: 1; transform: none; } }
@@ -504,7 +518,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     // 玩家（捉人的那个）
     PLAYER_SPEED: 4.0,        // 单位/秒
     PLAYER_SPRINT: 6.6,
-    PLAYER_RADIUS: 0.34,
+    PLAYER_RADIUS: 0.30,   // 1 格通道净宽 1.0，半径必须明显小于 0.5 才能顺畅穿行
     // 躲藏者
     HIDER_SPEED: 3.5,
     HIDER_SPRINT: 4.35,
@@ -717,6 +731,17 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     click() {
       this.tone({ type: 'square', freq: 720, dur: 0.05, vol: 0.06 });
     },
+    /** 撞到障碍物：墙体是闷响，灌木是沙沙，岩石/木箱是硬碰 */
+    bump(kind) {
+      if (kind === 'bush') { this.rustle(); return; }
+      if (kind === 'rock' || kind === 'crate') {
+        this.noise({ freq: 420, freqTo: 180, dur: 0.12, vol: 0.10, q: 1.4 });
+        this.tone({ type: 'square', freq: 150, freqTo: 90, dur: 0.09, vol: 0.05 });
+        return;
+      }
+      this.noise({ freq: 220, freqTo: 110, dur: 0.11, vol: 0.075, q: 1.0, filter: 'lowpass' });
+    },
+
     warn() {
       this.tone({ type: 'sawtooth', freq: 200, freqTo: 320, dur: 0.25, vol: 0.1 });
     }
@@ -1388,12 +1413,13 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       return g;
     }
 
-    function makeRock(x, z) {
+    function makeRock(x, z, scale) {
+      const sc = scale == null ? 1 : scale;
       const g = new T.Group();
       const n = rng.int(2, 3);
       for (let i = 0; i < n; i++) {
         const r = new T.Mesh(rockGeo, rockMat);
-        const s = rng.range(0.55, 1.05);
+        const s = rng.range(0.55, 1.05) * sc;
         r.position.set(rng.range(-0.16, 0.16), s * 0.3, rng.range(-0.16, 0.16));
         r.scale.set(s, s * rng.range(0.6, 0.95), s);
         r.rotation.set(rng() * 3, rng() * 3, rng() * 3);
@@ -1405,12 +1431,13 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       return g;
     }
 
-    function makeBush(x, z, big) {
+    function makeBush(x, z, big, scale) {
+      const sc = scale == null ? 1 : scale;
       const g = new T.Group();
       const n = big ? 4 : 3;
       for (let i = 0; i < n; i++) {
         const b = new T.Mesh(foliageGeo, rng.pick(bushMat));
-        const s = (big ? rng.range(0.85, 1.2) : rng.range(0.5, 0.8));
+        const s = (big ? rng.range(0.85, 1.2) : rng.range(0.5, 0.8)) * sc;
         b.position.set(rng.range(-0.3, 0.3), s * 0.42, rng.range(-0.3, 0.3));
         b.scale.set(s, s * 0.8, s);
         b.rotation.set(rng() * 3, rng() * 3, rng() * 3);
@@ -1424,6 +1451,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
     function makeCrates(x, z, dirx, dirz) {
       const g = new T.Group();
+      g.scale.setScalar(0.74);
       const base = new T.Mesh(crateGeo, rng.chance(0.5) ? crateMat : crateMat2);
       base.position.set(0, 0.39, 0);
       base.castShadow = true; base.receiveShadow = true;
@@ -1492,8 +1520,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     for (const cell of spotCells) {
       if (hideSpots.length >= maxSpots) break;
       const [dx, dy] = rng.pick(cell.open);
-      const cx = cell.x + dx * 0.34;
-      const cz = cell.y + dy * 0.34;
+      // 关键：躲藏物只允许占用墙格外侧 0.16 的厚度，其余全部缩回墙里，
+      // 否则 1 格宽的通道会被越界占用而堵死（玩家反而过不去）。
+      const INSET = 0.12;
+      const cx = cell.x + dx * INSET;
+      const cz = cell.y + dy * INSET;
       // 避免和已有躲藏点太近
       let tooClose = false;
       for (const s of hideSpots) {
@@ -1506,18 +1537,21 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const corner = (wallAt(cell.x + 1, cell.y) || wallAt(cell.x - 1, cell.y)) &&
                      (wallAt(cell.x, cell.y + 1) || wallAt(cell.x, cell.y - 1));
       const roll = rng();
-      let type, model, radius;
+      let type, model;
       if (roll < 0.42) {
-        type = 'bush'; radius = 0.52;
-        model = makeBush(cx, cz, corner);
+        type = 'bush';
+        model = makeBush(cx, cz, corner, 0.62);
       } else if (roll < 0.72) {
-        type = 'rock'; radius = 0.5;
-        model = makeRock(cx, cz);
+        type = 'rock';
+        model = makeRock(cx, cz, 0.72);
       } else {
-        type = 'crate'; radius = 0.55;
+        type = 'crate';
         model = makeCrates(cx, cz, dx, dy);
       }
-      hideSpots.push({ x: cx, z: cz, cellX: cell.x, cellZ: cell.y, type, radius, model });
+      // 碰撞半径 = 通道内的可见体量。校验：墙面(0.5) - 内缩(0.12) - 半径(0.26) = 0.12 净空，
+      // 玩家半径 0.30 的圆心因此还能落在离墙 0.38~0.62 的通行带里（带宽 0.24）。
+      const radius = rng.range(0.25, 0.28);
+      hideSpots.push({ x: cx, z: cz, cellX: cell.x, cellZ: cell.y, type, radius, inset: INSET, model });
       occupied.add(cell.y * maze.w + cell.x);
     }
 
@@ -2258,6 +2292,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         statEls: Array.prototype.slice.call(document.querySelectorAll('.stat'))
       };
 
+      if (this.opts.onToast) this.setToastHandler(this.opts.onToast);
+
       global.HS.input.init(canvas, cam, () => 0.3);
 
       global.addEventListener('resize', () => this.resize());
@@ -2425,15 +2461,67 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       return out;
     },
 
-    blocked(x, z, radius, self) {
-      if (this.maze.isWall(Math.round(x), Math.round(z))) return true;
-      if (this.maze.isWall(Math.floor(x), Math.floor(z))) return true;
+    /**
+     * 碰撞检测。wantReason 为真时会把“挡住了什么”记到 this._lastBlock，
+     * 供 _blockedFeedback() 生成提示（墙体 / 灌木 / 岩石 / 木箱）。
+     */
+    blocked(x, z, radius, self, wantReason) {
+      if (wantReason) this._lastBlock = null;
+      if (this.maze.isWall(Math.round(x), Math.round(z)) || this.maze.isWall(Math.floor(x), Math.floor(z))) {
+        if (wantReason) this._lastBlock = { kind: 'wall' };
+        return true;
+      }
       const props = this._propsAround(x, z);
       for (const p of props) {
         if (self && self.spot === p) continue;
-        if (U.dist2(x, z, p.x, p.z) < radius + p.radius * 0.85) return true;
+        if (U.dist2(x, z, p.x, p.z) < radius + p.radius * 0.85) {
+          if (wantReason) this._lastBlock = { kind: p.type, prop: p };
+          return true;
+        }
       }
       return false;
+    },
+
+    /* 不同障碍物的提示文案 */
+    BLOCK_INFO: {
+      wall:  { kind: 'block', msg: (d) => `撞到石墙了 · ${d} 是墙` },
+      bush:  { kind: 'block', msg: (d) => `灌木挡住了去路 · ${d} 绕一下` },
+      rock:  { kind: 'block', msg: (d) => `岩石搬不动 · ${d} 从旁边绕` },
+      crate: { kind: 'block', msg: (d) => `木箱堆死了这条路 · ${d} 旁边能过` }
+    },
+
+    _dirName(dx, dz) {
+      if (Math.abs(dx) < 0.01 && Math.abs(dz) < 0.01) return '前方';
+      let best = '前方', bestDot = -Infinity;
+      const named = [['北（上）', 0, -1], ['南（下）', 0, 1], ['西（左）', -1, 0], ['东（右）', 1, 0]];
+      for (const [name, nx, nz] of named) {
+        const dot = dx * nx + dz * nz;
+        if (dot > bestDot) { bestDot = dot; best = name; }
+      }
+      return best;
+    },
+
+    /** 撞上障碍时给玩家一句明确提示（带冷却，避免贴墙走时刷屏） */
+    _blockedFeedback(report) {
+      if (!report) return;
+      const now = this.time || 0;
+      if (now - (this._blockAt || -9) < 0.85) return;
+      const info = this.BLOCK_INFO[report.kind] || this.BLOCK_INFO.wall;
+      if (!info) return;
+      this._blockAt = now;
+      const dir = this._dirName(this._intentX || 0, this._intentZ || 0);
+      this._emitToast(info.msg(dir), info.kind);
+      global.HS.audio.bump(report.kind);
+    },
+
+    /**
+     * toast 输出口：由 UI 层（main.js）注入渲染函数。
+     * 注意这里用普通方法而不是对象字面量的 getter/setter —— 后者在本对象上不是函数，
+     * init 里传进来的 onToast 会静默失效（踩过一次）。
+     */
+    setToastHandler(fn) { this._toastHandler = typeof fn === 'function' ? fn : null; },
+    _emitToast(msg, kind) {
+      if (typeof this._toastHandler === 'function') this._toastHandler(msg, kind);
     },
 
     _hasLineOfSight(ax, az, bx, bz) {
@@ -2548,8 +2636,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const speed = sprint ? CFG.PLAYER_SPRINT : CFG.PLAYER_SPEED;
       p.sprinting = sprint;
 
+      this._intentX = ax; this._intentZ = az;
+
       if (ax !== 0 || az !== 0) {
-        this._move(p, ax * speed * dt, az * speed * dt, false);
+        const rep = this._move(p, ax * speed * dt, az * speed * dt, false);
+        if (rep && rep.blocked) this._blockedFeedback(rep);
         p.dirX = ax; p.dirZ = az;
         p.speed = U.damp(p.speed, speed, 12, dt);
         const targetYaw = Math.atan2(ax, az);
@@ -2588,27 +2679,39 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       }
     },
 
+    /**
+     * 分轴移动 + 滑动。返回 { blocked, kind }：给玩家做“撞到什么”的反馈。
+     * 玩家（isHider=false）才需要原因，AI 不需要。
+     */
     _move(ent, dx, dz, isHider) {
       const r = ent.r;
+      const self = isHider ? ent : null;
+      const reason = !isHider;
+      let block = null;
+
       // X 轴
-      let nx = ent.x + dx;
-      if (this.blocked(nx, ent.z, r, isHider ? ent : null)) {
-        if (!this.blocked(nx, ent.z, r * 0.62, isHider ? ent : null)) { ent.x = nx; }
+      const nx = ent.x + dx;
+      if (this.blocked(nx, ent.z, r, self, reason)) {
+        if (!this.blocked(nx, ent.z, r * 0.62, self, reason)) ent.x = nx;
         else {
-          // 小步滑动
           const half = dx * 0.5;
-          if (!this.blocked(ent.x + half, ent.z, r * 0.9, isHider ? ent : null)) ent.x += half;
+          if (!this.blocked(ent.x + half, ent.z, r * 0.9, self, false)) ent.x += half;
+          else if (reason) block = this._lastBlock;
         }
       } else ent.x = nx;
+
       // Z 轴
-      let nz = ent.z + dz;
-      if (this.blocked(ent.x, nz, r, isHider ? ent : null)) {
-        if (!this.blocked(ent.x, nz, r * 0.62, isHider ? ent : null)) { ent.z = nz; }
+      const nz = ent.z + dz;
+      if (this.blocked(ent.x, nz, r, self, reason)) {
+        if (!this.blocked(ent.x, nz, r * 0.62, self, reason)) ent.z = nz;
         else {
           const half = dz * 0.5;
-          if (!this.blocked(ent.x, ent.z + half, r * 0.9, isHider ? ent : null)) ent.z += half;
+          if (!this.blocked(ent.x, ent.z + half, r * 0.9, self, false)) ent.z += half;
+          else if (reason) block = block || this._lastBlock;
         }
       } else ent.z = nz;
+
+      return { blocked: !!block, kind: block ? block.kind : null, prop: block ? block.prop : null };
     },
 
     updateHiders(dt, scatter) {
@@ -2740,7 +2843,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
           if (dd > 0.02) {
             const ix = dx / dd, iz = dz / dd;
             const before = { x: h.x, z: h.z };
-            this._move(h, ix * speed * dt, iz * speed * dt, h);
+            this._move(h, ix * speed * dt, iz * speed * dt, true);
             const moved = U.dist2(h.x, h.z, before.x, before.z);
             // 卡住就换个方向绕
             if (moved < speed * dt * 0.25 && h.state !== 'hiding') {
@@ -2749,7 +2852,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
                 h.stuck = 0;
                 const perp = { x: -iz, z: ix };
                 const sign = Math.random() < 0.5 ? 1 : -1;
-                this._move(h, perp.x * sign * speed * dt * 1.4, perp.z * sign * speed * dt * 1.4, h);
+                this._move(h, perp.x * sign * speed * dt * 1.4, perp.z * sign * speed * dt * 1.4, true);
                 if (U.dist2(h.x, h.z, before.x, before.z) < speed * dt * 0.2) {
                   h.state = 'idle';
                   h.stateT = 0;
@@ -2995,13 +3098,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     },
 
     /* ---------------- HUD ---------------- */
+    /** 兼容旧调用：默认走 onToast（由 main.js 渲染 DOM） */
     _toast(msg, kind) {
-      const el = document.createElement('div');
-      el.className = 'msg ' + (kind || '');
-      el.textContent = msg;
-      this.hud.toast.appendChild(el);
-      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2100);
-      while (this.hud.toast.children.length > 4) this.hud.toast.removeChild(this.hud.toast.firstChild);
+      this._emitToast(msg, kind);
     },
 
     _syncHud() {
@@ -3106,10 +3205,6 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     node.classList.toggle('hidden', !on);
   }
 
-  function toast(msg, kind) {
-    if (HS.Game && HS.Game._toast) HS.Game._toast(msg, kind);
-  }
-
   function startLevel(level) {
     HS.audio.init();
     HS.audio.resume();
@@ -3142,7 +3237,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         onEnd: (res) => {
           show('hud', true);
           showResult(res);
-        }
+        },
+        onToast: (msg, kind) => toast(msg, kind)
       });
     } catch (e) {
       console.error('[捉迷藏] 初始化 3D 渲染失败：', e);
@@ -3371,6 +3467,18 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       HS.audio.click();
       el('pause-tip').textContent = '按 Esc 继续游戏';
     }
+  }
+
+  /** 顶部提示条（障碍物提示、抓人进度、结算都用它） */
+  function toast(msg, kind) {
+    const box = el('toast');
+    if (!box) return;
+    const node = document.createElement('div');
+    node.className = 'msg ' + (kind || '');
+    node.textContent = msg;
+    box.appendChild(node);
+    global.setTimeout(() => { if (node.parentNode) node.parentNode.removeChild(node); }, 2200);
+    while (box.children.length > 4) box.removeChild(box.firstChild);
   }
 
   function showResult(res) {

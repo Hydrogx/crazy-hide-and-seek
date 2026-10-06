@@ -222,6 +222,89 @@ async function step(cdp, name, url, waitMs, evalExpr, shotName) {
     else console.log('✅ 无控制台错误');
   }
 
+  // ---- 通行性回归：路必须走得通（曾经的 bug：躲藏物越界占用把 1 格通道堵死）----
+  {
+    cdp.events.length = 0;
+    await cdp.send('Page.navigate', { url: URL_BASE + '?debug=1&diff=normal&cd=0.05' });
+    await sleep(6000);
+    const out = await cdp.eval(`(() => {
+      const G = window.HS.Game;
+      const rows = [];
+      for (let round = 0; round < 6; round++) {
+        G.start('normal', 1);
+        const maze = G.maze, r = G.seeker.r, step = 0.13;
+        const key = (x, z) => Math.round(x / step) + ',' + Math.round(z / step);
+        const s = G._spawnPlayerCell();
+        const seen = new Set([key(s.x, s.y)]), q = [[s.x, s.y]];
+        const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+        while (q.length) {
+          const [x, z] = q.pop();
+          for (const [dx, dz] of dirs) {
+            const nx = x + dx * step, nz = z + dz * step, k = key(nx, nz);
+            if (seen.has(k)) continue;
+            seen.add(k);
+            if (nx < 0.2 || nz < 0.2 || nx > maze.w - 1.2 || nz > maze.h - 1.2) continue;
+            if (G.blocked(nx, nz, r, null)) continue;
+            q.push([nx, nz]);
+          }
+        }
+        // 每个地面格是否至少有一个可达点
+        const floors = maze.floorCells();
+        const unreachable = floors.filter((c) => {
+          for (let ox = -0.34; ox <= 0.341; ox += step) {
+            for (let oz = -0.34; oz <= 0.341; oz += step) {
+              if (seen.has(key(c.x + ox, c.y + oz))) return false;
+            }
+          }
+          return true;
+        }).length;
+        // 相邻地面格之间的通道是否走得通
+        const floorSet = new Set(floors.map((c) => c.x + ',' + c.y));
+        const passable = (a, b) => {
+          for (let off = -0.34; off <= 0.341; off += 0.04) {
+            const dx = b.x - a.x, dz = b.y - a.y, px = -dz, pz = dx;
+            let ok = true;
+            for (let t = 0; t <= 1.0001; t += 0.1) {
+              if (G.blocked(a.x + dx * t + px * off, a.y + dz * t + pz * off, r, null)) { ok = false; break; }
+            }
+            if (ok) return true;
+          }
+          return false;
+        };
+        let pairs = 0, choked = 0;
+        for (const c of floors) {
+          for (const [dx, dz] of [[1, 0], [0, 1]]) {
+            const n = { x: c.x + dx, y: c.y + dz };
+            if (!floorSet.has(n.x + ',' + n.y)) continue;
+            pairs++;
+            if (!passable(c, n)) choked++;
+          }
+        }
+        // 躲藏点是否都能走到抓取范围内
+        const pts = [...seen].map((k) => k.split(',').map((v) => +v * step));
+        let spotsUnreachable = 0;
+        for (const sp of G.hideSpots) {
+          let best = 1e9;
+          for (const [x, z] of pts) {
+            const d = Math.hypot(x - sp.x, z - sp.z);
+            if (d < best) best = d;
+          }
+          if (best > 1.65) spotsUnreachable++;
+        }
+        rows.push({ floors: floors.length, unreachable, pairs, choked, spotsUnreachable, spots: G.hideSpots.length });
+      }
+      return rows;
+    })()`);
+    const errors = reportConsole(cdp.events);
+    const sum = (k) => out.reduce((a, r) => a + r[k], 0);
+    const bad = out.filter((r) => r.unreachable > 0 || r.choked > 0 || r.spotsUnreachable > 0);
+    results.steps.push({ name: '通行性回归', state: out, errors, bad: bad.length });
+    console.log('\n=== 通行性回归（6 局随机迷宫）===');
+    console.log('不可达地面格:', sum('unreachable'), '| 堵死通道:', sum('choked'), '| 抓不到的躲藏点:', sum('spotsUnreachable'));
+    console.log(bad.length ? '❌ 存在走不通的迷宫: ' + JSON.stringify(bad) : '✅ 所有通道均可通行，躲藏点全部可达');
+    if (errors.length) errors.forEach((e) => console.log('   ' + e));
+  }
+
   const allErrors = results.steps.flatMap((s) => s.errors || []);
   console.log('\n================ 汇总 ================');
   console.log('步骤数:', results.steps.length, '| 错误数:', allErrors.length);

@@ -128,6 +128,17 @@
     click() {
       this.tone({ type: 'square', freq: 720, dur: 0.05, vol: 0.06 });
     },
+    /** 撞到障碍物：墙体是闷响，灌木是沙沙，岩石/木箱是硬碰 */
+    bump(kind) {
+      if (kind === 'bush') { this.rustle(); return; }
+      if (kind === 'rock' || kind === 'crate') {
+        this.noise({ freq: 420, freqTo: 180, dur: 0.12, vol: 0.10, q: 1.4 });
+        this.tone({ type: 'square', freq: 150, freqTo: 90, dur: 0.09, vol: 0.05 });
+        return;
+      }
+      this.noise({ freq: 220, freqTo: 110, dur: 0.11, vol: 0.075, q: 1.0, filter: 'lowpass' });
+    },
+
     warn() {
       this.tone({ type: 'sawtooth', freq: 200, freqTo: 320, dur: 0.25, vol: 0.1 });
     }

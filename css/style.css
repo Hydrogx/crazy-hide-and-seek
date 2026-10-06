@@ -137,6 +137,20 @@ html, body {
   backdrop-filter: blur(8px);
 }
 #toast .msg.warn { color: #ffd0d0; border-color: rgba(255, 107, 107, 0.5); }
+/* 撞到障碍物的提示：暖黄色 + 轻微抖动，一眼就能看到 */
+#toast .msg.block {
+  color: #ffedc4;
+  border-color: rgba(255, 209, 102, 0.6);
+  background: rgba(38, 27, 8, 0.82);
+  animation: toast-in 0.24s cubic-bezier(0.2, 1.4, 0.5, 1), shake 0.42s ease 0.12s, toast-out 0.4s ease 1.7s forwards;
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
 #toast .msg.good { color: #d6ffe6; border-color: rgba(126, 231, 214, 0.5); }
 #toast .msg.gold { color: #fff1c9; border-color: rgba(255, 209, 102, 0.55); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-12px) scale(0.9); } to { opacity: 1; transform: none; } }

@@ -17,10 +17,6 @@
     node.classList.toggle('hidden', !on);
   }
 
-  function toast(msg, kind) {
-    if (HS.Game && HS.Game._toast) HS.Game._toast(msg, kind);
-  }
-
   function startLevel(level) {
     HS.audio.init();
     HS.audio.resume();
@@ -53,7 +49,8 @@
         onEnd: (res) => {
           show('hud', true);
           showResult(res);
-        }
+        },
+        onToast: (msg, kind) => toast(msg, kind)
       });
     } catch (e) {
       console.error('[捉迷藏] 初始化 3D 渲染失败：', e);
@@ -282,6 +279,18 @@
       HS.audio.click();
       el('pause-tip').textContent = '按 Esc 继续游戏';
     }
+  }
+
+  /** 顶部提示条（障碍物提示、抓人进度、结算都用它） */
+  function toast(msg, kind) {
+    const box = el('toast');
+    if (!box) return;
+    const node = document.createElement('div');
+    node.className = 'msg ' + (kind || '');
+    node.textContent = msg;
+    box.appendChild(node);
+    global.setTimeout(() => { if (node.parentNode) node.parentNode.removeChild(node); }, 2200);
+    while (box.children.length > 4) box.removeChild(box.firstChild);
   }
 
   function showResult(res) {

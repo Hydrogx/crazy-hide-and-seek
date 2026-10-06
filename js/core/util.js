@@ -12,7 +12,7 @@
     // 玩家（捉人的那个）
     PLAYER_SPEED: 4.0,        // 单位/秒
     PLAYER_SPRINT: 6.6,
-    PLAYER_RADIUS: 0.34,
+    PLAYER_RADIUS: 0.30,   // 1 格通道净宽 1.0，半径必须明显小于 0.5 才能顺畅穿行
     // 躲藏者
     HIDER_SPEED: 3.5,
     HIDER_SPRINT: 4.35,

@@ -63,6 +63,8 @@
         statEls: Array.prototype.slice.call(document.querySelectorAll('.stat'))
       };
 
+      if (this.opts.onToast) this.setToastHandler(this.opts.onToast);
+
       global.HS.input.init(canvas, cam, () => 0.3);
 
       global.addEventListener('resize', () => this.resize());
@@ -230,15 +232,67 @@
       return out;
     },
 
-    blocked(x, z, radius, self) {
-      if (this.maze.isWall(Math.round(x), Math.round(z))) return true;
-      if (this.maze.isWall(Math.floor(x), Math.floor(z))) return true;
+    /**
+     * 碰撞检测。wantReason 为真时会把“挡住了什么”记到 this._lastBlock，
+     * 供 _blockedFeedback() 生成提示（墙体 / 灌木 / 岩石 / 木箱）。
+     */
+    blocked(x, z, radius, self, wantReason) {
+      if (wantReason) this._lastBlock = null;
+      if (this.maze.isWall(Math.round(x), Math.round(z)) || this.maze.isWall(Math.floor(x), Math.floor(z))) {
+        if (wantReason) this._lastBlock = { kind: 'wall' };
+        return true;
+      }
       const props = this._propsAround(x, z);
       for (const p of props) {
         if (self && self.spot === p) continue;
-        if (U.dist2(x, z, p.x, p.z) < radius + p.radius * 0.85) return true;
+        if (U.dist2(x, z, p.x, p.z) < radius + p.radius * 0.85) {
+          if (wantReason) this._lastBlock = { kind: p.type, prop: p };
+          return true;
+        }
       }
       return false;
+    },
+
+    /* 不同障碍物的提示文案 */
+    BLOCK_INFO: {
+      wall:  { kind: 'block', msg: (d) => `撞到石墙了 · ${d} 是墙` },
+      bush:  { kind: 'block', msg: (d) => `灌木挡住了去路 · ${d} 绕一下` },
+      rock:  { kind: 'block', msg: (d) => `岩石搬不动 · ${d} 从旁边绕` },
+      crate: { kind: 'block', msg: (d) => `木箱堆死了这条路 · ${d} 旁边能过` }
+    },
+
+    _dirName(dx, dz) {
+      if (Math.abs(dx) < 0.01 && Math.abs(dz) < 0.01) return '前方';
+      let best = '前方', bestDot = -Infinity;
+      const named = [['北（上）', 0, -1], ['南（下）', 0, 1], ['西（左）', -1, 0], ['东（右）', 1, 0]];
+      for (const [name, nx, nz] of named) {
+        const dot = dx * nx + dz * nz;
+        if (dot > bestDot) { bestDot = dot; best = name; }
+      }
+      return best;
+    },
+
+    /** 撞上障碍时给玩家一句明确提示（带冷却，避免贴墙走时刷屏） */
+    _blockedFeedback(report) {
+      if (!report) return;
+      const now = this.time || 0;
+      if (now - (this._blockAt || -9) < 0.85) return;
+      const info = this.BLOCK_INFO[report.kind] || this.BLOCK_INFO.wall;
+      if (!info) return;
+      this._blockAt = now;
+      const dir = this._dirName(this._intentX || 0, this._intentZ || 0);
+      this._emitToast(info.msg(dir), info.kind);
+      global.HS.audio.bump(report.kind);
+    },
+
+    /**
+     * toast 输出口：由 UI 层（main.js）注入渲染函数。
+     * 注意这里用普通方法而不是对象字面量的 getter/setter —— 后者在本对象上不是函数，
+     * init 里传进来的 onToast 会静默失效（踩过一次）。
+     */
+    setToastHandler(fn) { this._toastHandler = typeof fn === 'function' ? fn : null; },
+    _emitToast(msg, kind) {
+      if (typeof this._toastHandler === 'function') this._toastHandler(msg, kind);
     },
 
     _hasLineOfSight(ax, az, bx, bz) {
@@ -353,8 +407,11 @@
       const speed = sprint ? CFG.PLAYER_SPRINT : CFG.PLAYER_SPEED;
       p.sprinting = sprint;
 
+      this._intentX = ax; this._intentZ = az;
+
       if (ax !== 0 || az !== 0) {
-        this._move(p, ax * speed * dt, az * speed * dt, false);
+        const rep = this._move(p, ax * speed * dt, az * speed * dt, false);
+        if (rep && rep.blocked) this._blockedFeedback(rep);
         p.dirX = ax; p.dirZ = az;
         p.speed = U.damp(p.speed, speed, 12, dt);
         const targetYaw = Math.atan2(ax, az);
@@ -393,27 +450,39 @@
       }
     },
 
+    /**
+     * 分轴移动 + 滑动。返回 { blocked, kind }：给玩家做“撞到什么”的反馈。
+     * 玩家（isHider=false）才需要原因，AI 不需要。
+     */
     _move(ent, dx, dz, isHider) {
       const r = ent.r;
+      const self = isHider ? ent : null;
+      const reason = !isHider;
+      let block = null;
+
       // X 轴
-      let nx = ent.x + dx;
-      if (this.blocked(nx, ent.z, r, isHider ? ent : null)) {
-        if (!this.blocked(nx, ent.z, r * 0.62, isHider ? ent : null)) { ent.x = nx; }
+      const nx = ent.x + dx;
+      if (this.blocked(nx, ent.z, r, self, reason)) {
+        if (!this.blocked(nx, ent.z, r * 0.62, self, reason)) ent.x = nx;
         else {
-          // 小步滑动
           const half = dx * 0.5;
-          if (!this.blocked(ent.x + half, ent.z, r * 0.9, isHider ? ent : null)) ent.x += half;
+          if (!this.blocked(ent.x + half, ent.z, r * 0.9, self, false)) ent.x += half;
+          else if (reason) block = this._lastBlock;
         }
       } else ent.x = nx;
+
       // Z 轴
-      let nz = ent.z + dz;
-      if (this.blocked(ent.x, nz, r, isHider ? ent : null)) {
-        if (!this.blocked(ent.x, nz, r * 0.62, isHider ? ent : null)) { ent.z = nz; }
+      const nz = ent.z + dz;
+      if (this.blocked(ent.x, nz, r, self, reason)) {
+        if (!this.blocked(ent.x, nz, r * 0.62, self, reason)) ent.z = nz;
         else {
           const half = dz * 0.5;
-          if (!this.blocked(ent.x, ent.z + half, r * 0.9, isHider ? ent : null)) ent.z += half;
+          if (!this.blocked(ent.x, ent.z + half, r * 0.9, self, false)) ent.z += half;
+          else if (reason) block = block || this._lastBlock;
         }
       } else ent.z = nz;
+
+      return { blocked: !!block, kind: block ? block.kind : null, prop: block ? block.prop : null };
     },
 
     updateHiders(dt, scatter) {
@@ -545,7 +614,7 @@
           if (dd > 0.02) {
             const ix = dx / dd, iz = dz / dd;
             const before = { x: h.x, z: h.z };
-            this._move(h, ix * speed * dt, iz * speed * dt, h);
+            this._move(h, ix * speed * dt, iz * speed * dt, true);
             const moved = U.dist2(h.x, h.z, before.x, before.z);
             // 卡住就换个方向绕
             if (moved < speed * dt * 0.25 && h.state !== 'hiding') {
@@ -554,7 +623,7 @@
                 h.stuck = 0;
                 const perp = { x: -iz, z: ix };
                 const sign = Math.random() < 0.5 ? 1 : -1;
-                this._move(h, perp.x * sign * speed * dt * 1.4, perp.z * sign * speed * dt * 1.4, h);
+                this._move(h, perp.x * sign * speed * dt * 1.4, perp.z * sign * speed * dt * 1.4, true);
                 if (U.dist2(h.x, h.z, before.x, before.z) < speed * dt * 0.2) {
                   h.state = 'idle';
                   h.stateT = 0;
@@ -800,13 +869,9 @@
     },
 
     /* ---------------- HUD ---------------- */
+    /** 兼容旧调用：默认走 onToast（由 main.js 渲染 DOM） */
     _toast(msg, kind) {
-      const el = document.createElement('div');
-      el.className = 'msg ' + (kind || '');
-      el.textContent = msg;
-      this.hud.toast.appendChild(el);
-      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2100);
-      while (this.hud.toast.children.length > 4) this.hud.toast.removeChild(this.hud.toast.firstChild);
+      this._emitToast(msg, kind);
     },
 
     _syncHud() {

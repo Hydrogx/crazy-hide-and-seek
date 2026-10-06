@@ -412,12 +412,13 @@
       return g;
     }
 
-    function makeRock(x, z) {
+    function makeRock(x, z, scale) {
+      const sc = scale == null ? 1 : scale;
       const g = new T.Group();
       const n = rng.int(2, 3);
       for (let i = 0; i < n; i++) {
         const r = new T.Mesh(rockGeo, rockMat);
-        const s = rng.range(0.55, 1.05);
+        const s = rng.range(0.55, 1.05) * sc;
         r.position.set(rng.range(-0.16, 0.16), s * 0.3, rng.range(-0.16, 0.16));
         r.scale.set(s, s * rng.range(0.6, 0.95), s);
         r.rotation.set(rng() * 3, rng() * 3, rng() * 3);
@@ -429,12 +430,13 @@
       return g;
     }
 
-    function makeBush(x, z, big) {
+    function makeBush(x, z, big, scale) {
+      const sc = scale == null ? 1 : scale;
       const g = new T.Group();
       const n = big ? 4 : 3;
       for (let i = 0; i < n; i++) {
         const b = new T.Mesh(foliageGeo, rng.pick(bushMat));
-        const s = (big ? rng.range(0.85, 1.2) : rng.range(0.5, 0.8));
+        const s = (big ? rng.range(0.85, 1.2) : rng.range(0.5, 0.8)) * sc;
         b.position.set(rng.range(-0.3, 0.3), s * 0.42, rng.range(-0.3, 0.3));
         b.scale.set(s, s * 0.8, s);
         b.rotation.set(rng() * 3, rng() * 3, rng() * 3);
@@ -448,6 +450,7 @@
 
     function makeCrates(x, z, dirx, dirz) {
       const g = new T.Group();
+      g.scale.setScalar(0.74);
       const base = new T.Mesh(crateGeo, rng.chance(0.5) ? crateMat : crateMat2);
       base.position.set(0, 0.39, 0);
       base.castShadow = true; base.receiveShadow = true;
@@ -516,8 +519,11 @@
     for (const cell of spotCells) {
       if (hideSpots.length >= maxSpots) break;
       const [dx, dy] = rng.pick(cell.open);
-      const cx = cell.x + dx * 0.34;
-      const cz = cell.y + dy * 0.34;
+      // 关键：躲藏物只允许占用墙格外侧 0.16 的厚度，其余全部缩回墙里，
+      // 否则 1 格宽的通道会被越界占用而堵死（玩家反而过不去）。
+      const INSET = 0.12;
+      const cx = cell.x + dx * INSET;
+      const cz = cell.y + dy * INSET;
       // 避免和已有躲藏点太近
       let tooClose = false;
       for (const s of hideSpots) {
@@ -530,18 +536,21 @@
       const corner = (wallAt(cell.x + 1, cell.y) || wallAt(cell.x - 1, cell.y)) &&
                      (wallAt(cell.x, cell.y + 1) || wallAt(cell.x, cell.y - 1));
       const roll = rng();
-      let type, model, radius;
+      let type, model;
       if (roll < 0.42) {
-        type = 'bush'; radius = 0.52;
-        model = makeBush(cx, cz, corner);
+        type = 'bush';
+        model = makeBush(cx, cz, corner, 0.62);
       } else if (roll < 0.72) {
-        type = 'rock'; radius = 0.5;
-        model = makeRock(cx, cz);
+        type = 'rock';
+        model = makeRock(cx, cz, 0.72);
       } else {
-        type = 'crate'; radius = 0.55;
+        type = 'crate';
         model = makeCrates(cx, cz, dx, dy);
       }
-      hideSpots.push({ x: cx, z: cz, cellX: cell.x, cellZ: cell.y, type, radius, model });
+      // 碰撞半径 = 通道内的可见体量。校验：墙面(0.5) - 内缩(0.12) - 半径(0.26) = 0.12 净空，
+      // 玩家半径 0.30 的圆心因此还能落在离墙 0.38~0.62 的通行带里（带宽 0.24）。
+      const radius = rng.range(0.25, 0.28);
+      hideSpots.push({ x: cx, z: cz, cellX: cell.x, cellZ: cell.y, type, radius, inset: INSET, model });
       occupied.add(cell.y * maze.w + cell.x);
     }
 
