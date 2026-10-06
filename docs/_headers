@@ -1,0 +1,13 @@
+# Cloudflare Pages 响应头（放在部署目录里即生效）
+# 说明：index.html 不设长缓存，避免重新部署后玩家拿到旧版本
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), interest-cohort=()
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/preview.png
+  Cache-Control: public, max-age=86400

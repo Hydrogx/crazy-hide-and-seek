@@ -1,0 +1,9 @@
+{
+  // 让 `wrangler pages deploy` 直接读取配置：wrangler pages deploy
+  // 或 `wrangler pages deploy docs` 也可以。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "crazy-hide-and-seek",
+  "compatibility_date": "2026-01-01",
+  "pages_build_output_dir": "docs"
+  // 无需构建：docs/index.html 是内联 three.js 的单文件版本，已是最终产物。
+}

@@ -1,0 +1,59 @@
+name: Deploy to GitHub Pages
+
+# 推送到 main 后自动部署 docs/ 目录（单文件版游戏）到 GitHub Pages
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'index.html'
+      - 'js/**'
+      - 'css/**'
+      - 'vendor/**'
+      - 'tools/build-standalone.mjs'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 重新打包（保证 docs/ 与最新源码一致）
+        run: node tools/build-standalone.mjs
+
+      - name: 校验产物
+        run: |
+          node tools/build-standalone.mjs --check
+          test -s docs/index.html
+          grep -q "REVISION" docs/index.html || { echo "three.js 未内联"; exit 1; }
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
