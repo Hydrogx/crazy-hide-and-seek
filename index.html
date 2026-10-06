@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>疯狂捉迷藏 · Hide &amp; Seek 3D</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ===================== HUD ===================== -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="panel stat">
+        <span class="label">剩余时间</span>
+        <span class="value" id="stat-time">90</span>
+        <div class="bar"><i id="time-bar"></i></div>
+      </div>
+      <div class="panel stat">
+        <span class="label">抓到</span>
+        <span class="value"><b id="stat-found">0</b> / <span id="stat-total">8</span></span>
+      </div>
+      <div class="panel stat">
+        <span class="label">噪音</span>
+        <span class="value" id="stat-noise">安静</span>
+        <div class="bar noise"><i id="noise-bar"></i></div>
+      </div>
+      <div class="panel stat">
+        <span class="label">关卡</span>
+        <span class="value" id="stat-level">1</span>
+      </div>
+      <div class="hud-buttons">
+        <button class="btn ghost" id="btn-pause" title="暂停 / 继续 (Esc)">⏸</button>
+        <button class="btn ghost" id="btn-sound" title="音效开关 (M)">🔊</button>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+    <div id="minimap-wrap" class="panel">
+      <canvas id="minimap" width="210" height="210"></canvas>
+      <div class="mm-title">小地图</div>
+    </div>
+    <!-- 触屏虚拟摇杆 -->
+    <div id="joystick" class="hidden">
+      <div class="joy-base"><i class="joy-knob"></i></div>
+      <div class="joy-hint">按住拖动移动</div>
+    </div>
+    <button id="btn-grab" class="hidden">抓<i>住</i></button>
+
+    <div class="hint">
+      <b>WASD</b>/方向键 移动 · <b>Shift</b> 疾跑(吵) · <b>空格</b> 抓住 · <b>Esc</b> 暂停
+    </div>
+  </div>
+
+  <!-- ===================== 开始界面 ===================== -->
+  <div id="screen-start" class="screen">
+    <div class="card">
+      <h1>疯狂捉迷藏</h1>
+      <p class="sub">3D · 固定斜俯瞰视角 · three.js</p>
+      <div class="rules">
+        <p><b>你的任务</b>：在天黑之前，把躲在公园里的捣蛋鬼全部揪出来。</p>
+        <ul>
+          <li><b>WASD / ↑↓←→</b> 移动；<b>Shift</b> 疾跑（速度更快，但噪音大，会把小捣蛋鬼吓跑）</li>
+          <li>靠近小捣蛋鬼，<b>按住空格</b> 直到进度环充满即可抓住</li>
+          <li>他们听到动静会逃跑，跑累了才会慢下来 —— 别让时间用光！</li>
+          <li>右上角小地图会显示你听到的动静方向</li>
+        </ul>
+      </div>
+      <div class="diff-row" id="diff-row">
+        <button class="diff selected" data-diff="easy">轻松<b>6人 · 120秒</b></button>
+        <button class="diff" data-diff="normal">普通<b>8人 · 90秒</b></button>
+        <button class="diff" data-diff="hard">疯狂<b>11人 · 75秒</b></button>
+      </div>
+      <button class="btn primary" id="btn-start">开始游戏</button>
+      <p class="foot">提示：躲藏点里的家伙会偷偷换位置，别只盯着一个地方。</p>
+    </div>
+  </div>
+
+  <!-- ===================== 倒数 ===================== -->
+  <div id="countdown" class="hidden"><span id="countdown-text">3</span></div>
+
+  <!-- ===================== 结算界面 ===================== -->
+  <div id="screen-end" class="screen hidden">
+    <div class="card">
+      <h2 id="end-title">游戏结束</h2>
+      <p id="end-desc" class="sub"></p>
+      <div id="end-stats" class="end-stats"></div>
+      <div class="diff-row">
+        <button class="btn primary" id="btn-again">再来一局</button>
+        <button class="btn" id="btn-next">下一关</button>
+        <button class="btn ghost" id="btn-menu">返回主菜单</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 暂停 ===================== -->
+  <div id="screen-pause" class="screen hidden">
+    <div class="card small">
+      <h2>已暂停</h2>
+      <p class="sub" id="pause-tip">按 Esc 继续游戏</p>
+      <button class="btn primary" id="btn-resume">继续</button>
+      <button class="btn ghost" id="btn-restart">重新开始</button>
+    </div>
+  </div>
+
+  <div id="loading" class="screen"><div class="card small"><h2>加载中…</h2><p class="sub" id="loading-tip">正在生成公园</p></div></div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="js/core/util.js"></script>
+<script src="js/core/audio.js"></script>
+<script src="js/core/input.js"></script>
+<script src="js/game/maze.js"></script>
+<script src="js/game/scene.js"></script>
+<script src="js/game/characters.js"></script>
+<script src="js/game/particles.js"></script>
+<script src="js/game/minimap.js"></script>
+<script src="js/game/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
