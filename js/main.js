@@ -117,9 +117,10 @@
               new global.THREE.SphereGeometry(0.22, 12, 10),
               new global.THREE.MeshBasicMaterial({ color: 0xff2f6d })
             );
+            const S = (window.HS.CONFIG.CELL_SCALE || 1);
             m.position.set(
-              G.seeker.x - G.level3d.offX + Math.sin(G.seeker.yaw) * 2, 0.5,
-              G.seeker.z - G.level3d.offZ + Math.cos(G.seeker.yaw) * 2
+              (G.seeker.x - G.level3d.offX + Math.sin(G.seeker.yaw) * 2) * S, 0.5 * S,
+              (G.seeker.z - G.level3d.offZ + Math.cos(G.seeker.yaw) * 2) * S
             );
             G.scene.add(m);
           }, 1200);

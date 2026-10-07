@@ -4,6 +4,8 @@
 
   const T = global.THREE;
   const U = global.HS.util;
+  const CFG = global.HS.CONFIG;
+  const S = CFG.CELL_SCALE || 1;   // 世界空间尺度
 
   const Particles = {
     MAX: 700,
@@ -36,7 +38,7 @@
       tex.colorSpace = T.SRGBColorSpace;
 
       const mat = new T.PointsMaterial({
-        size: 0.16, map: tex, vertexColors: true, transparent: true,
+        size: 0.16 * S, map: tex, vertexColors: true, transparent: true,
         depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true
       });
       this.points = new T.Points(geo, mat);
@@ -106,13 +108,13 @@
       for (let i = 0; i < count; i++) {
         const idx = this.cursor;
         this.cursor = (this.cursor + 1) % this.MAX;
-        this.positions[idx * 3] = x + (Math.random() - 0.5) * 0.25;
-        this.positions[idx * 3 + 1] = y + Math.random() * 0.2;
-        this.positions[idx * 3 + 2] = z + (Math.random() - 0.5) * 0.25;
+        this.positions[idx * 3] = x + (Math.random() - 0.5) * 0.25 * S;
+        this.positions[idx * 3 + 1] = y + Math.random() * 0.2 * S;
+        this.positions[idx * 3 + 2] = z + (Math.random() - 0.5) * 0.25 * S;
         const a = Math.random() * Math.PI * 2;
         const r = Math.random() * spread;
         this.vel[idx * 3] = Math.cos(a) * r;
-        this.vel[idx * 3 + 1] = Math.random() * up + 0.6;
+        this.vel[idx * 3 + 1] = Math.random() * up + 0.6 * S;
         this.vel[idx * 3 + 2] = Math.sin(a) * r;
         const cc = c.clone();
         if (opts.jitter) {
@@ -149,15 +151,15 @@
         any = true;
         highest = i;
         this.life[i] -= dt;
-        this.vel[i * 3 + 1] -= 7.5 * dt;
+        this.vel[i * 3 + 1] -= 7.5 * S * dt;
         this.vel[i * 3] *= 0.985;
         this.vel[i * 3 + 2] *= 0.985;
         pos[i * 3] += this.vel[i * 3] * dt;
         pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
         pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
         if (this.life[i] <= 0) pos[i * 3 + 1] = -999;
-        else if (this.vel[i * 3 + 1] < -0.2 && pos[i * 3 + 1] < 0.06) {
-          pos[i * 3 + 1] = 0.06;
+        else if (this.vel[i * 3 + 1] < -0.2 * S && pos[i * 3 + 1] < 0.06 * S) {
+          pos[i * 3 + 1] = 0.06 * S;
           this.vel[i * 3 + 1] *= -0.32;
           this.vel[i * 3] *= 0.7;
           this.vel[i * 3 + 2] *= 0.7;
@@ -186,7 +188,7 @@
         const t = this.texts[i];
         t.t += dt;
         const k = t.t / t.dur;
-        t.spr.position.y += dt * 1.35;
+        t.spr.position.y += dt * 1.35 * S;
         t.spr.material.opacity = k < 0.15 ? k / 0.15 : Math.max(0, 1 - (k - 0.15) / 0.85);
         if (k >= 1) {
           this.scene.remove(t.spr);

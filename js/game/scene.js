@@ -185,12 +185,13 @@
 
   /* ---------------- 场景构建 ---------------- */
   function build(maze, seed) {
+    const S = CFG.CELL_SCALE || 1;   // 世界空间尺度：所有世界单位都乘它
     const rng = U.makeRng((seed ^ 0x9e3779b9) >>> 0);
     const scene = new T.Scene();
     const offX = (maze.w - 1) / 2;
     const offZ = (maze.h - 1) / 2;
     const group = new T.Group();
-    group.position.set(-offX, 0, -offZ);
+    group.position.set(-offX * S, 0, -offZ * S);
     scene.add(group);
 
     const disposables = [];
@@ -210,8 +211,8 @@
     /* ---- 天空 / 雾 ---- */
     const skyTop = new T.Color('#0a1226');
     const skyBottom = new T.Color('#243b52');
-    scene.fog = new T.Fog('#182437', 32, 70);
-    const skyGeo = new T.SphereGeometry(160, 24, 16);
+    scene.fog = new T.Fog('#182437', 32 * S, 70 * S);
+    const skyGeo = new T.SphereGeometry(160 * S, 24, 16);
     const skyMat = new T.ShaderMaterial({
       side: T.BackSide,
       depthWrite: false,
@@ -221,7 +222,7 @@
       fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying float vH; void main(){ float t = clamp(vH*1.4+0.25,0.0,1.0); gl_FragColor = vec4(mix(bottom, top, t), 1.0); }'
     });
     const sky = new T.Mesh(skyGeo, skyMat);
-    sky.position.set(0, 10, 0);
+    sky.position.set(0, 10 * S, 0);
     scene.add(sky);
     disposables.push(skyGeo, skyMat);
 
@@ -232,14 +233,14 @@
       for (let i = 0; i < N; i++) {
         const theta = rng() * Math.PI * 2;
         const phi = Math.acos(rng.range(0.06, 0.98));
-        const r = 120;
+        const r = 120 * S;
         pos[i * 3] = Math.sin(phi) * Math.cos(theta) * r;
-        pos[i * 3 + 1] = Math.cos(phi) * r + 14;
+        pos[i * 3 + 1] = Math.cos(phi) * r + 14 * S;
         pos[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * r;
       }
       const g = new T.BufferGeometry();
       g.setAttribute('position', new T.BufferAttribute(pos, 3));
-      const m = new T.PointsMaterial({ color: 0xcfe3ff, size: 0.86, sizeAttenuation: true, transparent: true, opacity: 0.85, fog: false });
+      const m = new T.PointsMaterial({ color: 0xcfe3ff, size: 0.86 * S, sizeAttenuation: true, transparent: true, opacity: 0.85, fog: false });
       const stars = new T.Points(g, m);
       scene.add(stars);
       disposables.push(g, m);
@@ -247,13 +248,13 @@
 
     /* ---- 月亮 ---- */
     {
-      const g = new T.SphereGeometry(4.4, 20, 16);
+      const g = new T.SphereGeometry(4.4 * S, 20, 16);
       const m = new T.MeshBasicMaterial({ color: 0xfdf6d8, fog: false });
       const moon = new T.Mesh(g, m);
-      moon.position.set(-46, 62, -78);
+      moon.position.set(-46 * S, 62 * S, -78 * S);
       scene.add(moon);
       const halo = new T.Sprite(new T.SpriteMaterial({ map: glowTexture('rgba(255,248,220,0.95)'), transparent: true, blending: T.AdditiveBlending, depthWrite: false, fog: false }));
-      halo.scale.set(40, 40, 1);
+      halo.scale.set(40 * S, 40 * S, 1);
       halo.position.copy(moon.position);
       scene.add(halo);
       disposables.push(g, m, halo.material, halo.material.map);
@@ -266,27 +267,27 @@
     scene.add(ambient);
 
     const moonLight = new T.DirectionalLight(0xd6e4ff, 0.95);
-    moonLight.position.set(-22, 34, -26);
+    moonLight.position.set(-22 * S, 34 * S, -26 * S);
     moonLight.castShadow = true;
     moonLight.shadow.mapSize.set(2048, 2048);
     const sc = moonLight.shadow.camera;
-    sc.left = -22; sc.right = 22; sc.top = 22; sc.bottom = -22; sc.near = 1; sc.far = 110;
+    sc.left = -22 * S; sc.right = 22 * S; sc.top = 22 * S; sc.bottom = -22 * S; sc.near = 1; sc.far = 110 * S;
     moonLight.shadow.bias = -0.0018;
-    moonLight.shadow.normalBias = 0.045;
+    moonLight.shadow.normalBias = 0.045 * S;
     moonLight.target.position.set(0, 0, 0);
     scene.add(moonLight);
     scene.add(moonLight.target);
 
     // 补光：让斜俯瞰下的立体感和可读性更好
     const fill = new T.DirectionalLight(0x9fb4dd, 0.5);
-    fill.position.set(26, 20, 24);
+    fill.position.set(26 * S, 20 * S, 24 * S);
     scene.add(fill);
 
     /* ---- 地面 ---- */
     const grassTex = grassTexture();
-    grassTex.repeat.set(maze.w * 1.1, maze.h * 1.1);
+    grassTex.repeat.set(maze.w * 1.1 * S, maze.h * 1.1 * S);
     const groundMat = new T.MeshLambertMaterial({ map: grassTex, color: 0xb8c9a4 });
-    const groundGeo = new T.PlaneGeometry(maze.w + 30, maze.h + 30);
+    const groundGeo = new T.PlaneGeometry((maze.w + 30) * S, (maze.h + 30) * S);
     const ground = new T.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(0, -0.02, 0);
@@ -296,7 +297,7 @@
 
     // 迷宫地面瓦片（带一点起伏和色差）
     {
-      const tileGeo = new T.BoxGeometry(1, 0.16, 1);
+      const tileGeo = new T.BoxGeometry(S, 0.16 * S, S);
       const mats = [0x4a6741, 0x415c39, 0x54744a, 0x3b5433].map((c) => new T.MeshLambertMaterial({ color: c }));
       const cells = maze.floorCells();
       const buckets = mats.map(() => []);
@@ -310,7 +311,7 @@
         const s = new T.Vector3();
         const p = new T.Vector3();
         list.forEach((c, i) => {
-          p.set(c.x, -0.08 + rng.range(-0.01, 0.02), c.y);
+          p.set(c.x * S, (-0.08 + rng.range(-0.01, 0.02)) * S, c.y * S);
           s.set(1.01, 1, 1.01);
           q.setFromEuler(new T.Euler(0, (rng.int(0, 3) * Math.PI) / 2, 0));
           m4.compose(p, q, s);
@@ -326,7 +327,7 @@
     /* ---- 墙体 ---- */
     const wallTex = stoneTexture();
     const wallMat = new T.MeshLambertMaterial({ map: wallTex, color: 0xcfd8e6 });
-    const wallGeo = new T.BoxGeometry(1, CFG.WALL_H, 1);
+    const wallGeo = new T.BoxGeometry(S, CFG.WALL_H * S, S);
     {
       const cells = [];
       for (let y = 0; y < maze.h; y++) {
@@ -341,7 +342,7 @@
       const s = new T.Vector3();
       cells.forEach((c, i) => {
         const h = rng.range(0.94, 1.04);
-        p.set(c.x, (CFG.WALL_H * h) / 2 - 0.06, c.y);
+        p.set(c.x * S, ((CFG.WALL_H * h) / 2 - 0.06) * S, c.y * S);
         s.set(rng.range(0.99, 1.02), h, rng.range(0.99, 1.02));
         q.identity();
         m4.compose(p, q, s);
@@ -363,13 +364,13 @@
     const crateMat2 = new T.MeshLambertMaterial({ color: 0x6f4e2b });
     const plankMat = new T.MeshLambertMaterial({ color: 0xa8813f });
 
-    const foliageGeo = new T.IcosahedronGeometry(0.62, 0);
-    const trunkGeo = new T.CylinderGeometry(0.13, 0.19, 1.1, 7);
-    const rockGeo = new T.DodecahedronGeometry(0.42, 0);
-    const crateGeo = new T.BoxGeometry(0.78, 0.78, 0.78);
-    const plankGeo = new T.BoxGeometry(0.92, 0.14, 0.92);
-    const postGeo = new T.CylinderGeometry(0.075, 0.1, 2.5, 8);
-    const bulbGeo = new T.SphereGeometry(0.17, 12, 10);
+    const foliageGeo = new T.IcosahedronGeometry(0.62 * S, 0);
+    const trunkGeo = new T.CylinderGeometry(0.13 * S, 0.19 * S, 1.1 * S, 7);
+    const rockGeo = new T.DodecahedronGeometry(0.42 * S, 0);
+    const crateGeo = new T.BoxGeometry(0.78 * S, 0.78 * S, 0.78 * S);
+    const plankGeo = new T.BoxGeometry(0.92 * S, 0.14 * S, 0.92 * S);
+    const postGeo = new T.CylinderGeometry(0.075 * S, 0.1 * S, 2.5 * S, 8);
+    const bulbGeo = new T.SphereGeometry(0.17 * S, 12, 10);
     disposables.push(foliageGeo, trunkGeo, rockGeo, crateGeo, plankGeo, postGeo, bulbGeo);
     disposables.push(barkMat, barkTex, rockMat, crateMat, crateMat2, plankMat, ...foliMats, ...bushMat);
 
@@ -389,7 +390,7 @@
       if (kind === 'pine') {
         for (let i = 0; i < 3; i++) {
           const cone = new T.Mesh(new T.ConeGeometry(0.72 - i * 0.17, 0.78, 8), rng.pick(foliMats));
-          cone.position.y = (1.05 + i * 0.52) * scale;
+          cone.position.y = (1.05 + i * 0.52) * scale * S;
           cone.scale.setScalar(scale);
           cone.castShadow = true;
           g.add(mark(cone));
@@ -437,7 +438,7 @@
       for (let i = 0; i < n; i++) {
         const b = new T.Mesh(foliageGeo, rng.pick(bushMat));
         const s = (big ? rng.range(0.85, 1.2) : rng.range(0.5, 0.8)) * sc;
-        b.position.set(rng.range(-0.3, 0.3), s * 0.42, rng.range(-0.3, 0.3));
+        b.position.set(rng.range(-0.3, 0.3) * S, s * 0.42, rng.range(-0.3, 0.3) * S);
         b.scale.set(s, s * 0.8, s);
         b.rotation.set(rng() * 3, rng() * 3, rng() * 3);
         b.castShadow = true;
@@ -452,18 +453,18 @@
       const g = new T.Group();
       g.scale.setScalar(0.74);
       const base = new T.Mesh(crateGeo, rng.chance(0.5) ? crateMat : crateMat2);
-      base.position.set(0, 0.39, 0);
+      base.position.set(0, 0.39 * S, 0);
       base.castShadow = true; base.receiveShadow = true;
       g.add(mark(base));
       const lid = new T.Mesh(plankGeo, plankMat);
-      lid.position.set(0, 0.84, 0);
+      lid.position.set(0, 0.84 * S, 0);
       lid.rotation.y = rng.range(-0.3, 0.3);
       lid.castShadow = true;
       g.add(mark(lid));
       if (rng.chance(0.55)) {
         const small = new T.Mesh(crateGeo, crateMat2);
         small.scale.setScalar(0.62);
-        small.position.set(dirx * 0.36, 0.24, dirz * 0.36);
+        small.position.set(dirx * 0.36 * S, 0.24 * S, dirz * 0.36 * S);
         small.castShadow = true; small.receiveShadow = true;
         g.add(mark(small));
       }
@@ -476,21 +477,21 @@
     function makeLamp(x, z) {
       const g = new T.Group();
       const post = new T.Mesh(postGeo, new T.MeshLambertMaterial({ color: 0x2b2f36 }));
-      post.position.y = 1.25;
+      post.position.y = 1.25 * S;
       post.castShadow = true;
       g.add(post);
       const bulbMat = new T.MeshBasicMaterial({ color: 0xffe0a3 });
       const bulb = new T.Mesh(bulbGeo, bulbMat);
-      bulb.position.y = 2.52;
+      bulb.position.y = 2.52 * S;
       g.add(bulb);
-      const light = new T.PointLight(0xffd08a, 0.95, 7.5, 1.8);
-      light.position.y = 2.5;
+      const light = new T.PointLight(0xffd08a, 0.95, 7.5 * S, 1.8);
+      light.position.y = 2.5 * S;
       g.add(light);
-      const pool = new T.Mesh(new T.PlaneGeometry(6.5, 6.5), new T.MeshBasicMaterial({
+      const pool = new T.Mesh(new T.PlaneGeometry(6.5 * S, 6.5 * S), new T.MeshBasicMaterial({
         map: glowTexture('rgba(255,214,150,0.75)'), transparent: true, blending: T.AdditiveBlending, depthWrite: false, opacity: 0.5
       }));
       pool.rotation.x = -Math.PI / 2;
-      pool.position.y = 0.03;
+      pool.position.y = 0.03 * S;
       g.add(pool);
       g.position.set(x, 0, z);
       group.add(g);
@@ -521,9 +522,9 @@
       const [dx, dy] = rng.pick(cell.open);
       // 关键：躲藏物只允许占用墙格外侧 0.16 的厚度，其余全部缩回墙里，
       // 否则 1 格宽的通道会被越界占用而堵死（玩家反而过不去）。
-      const INSET = 0.12;
-      const cx = cell.x + dx * INSET;
-      const cz = cell.y + dy * INSET;
+      const INSET = 0.12;                       // 格为单位
+      const cx = (cell.x + dx * INSET) * S;     // 世界坐标
+      const cz = (cell.y + dy * INSET) * S;
       // 避免和已有躲藏点太近
       let tooClose = false;
       for (const s of hideSpots) {
@@ -549,8 +550,12 @@
       }
       // 碰撞半径 = 通道内的可见体量。校验：墙面(0.5) - 内缩(0.12) - 半径(0.26) = 0.12 净空，
       // 玩家半径 0.30 的圆心因此还能落在离墙 0.38~0.62 的通行带里（带宽 0.24）。
-      const radius = rng.range(0.25, 0.28);
-      hideSpots.push({ x: cx, z: cz, cellX: cell.x, cellZ: cell.y, type, radius, inset: INSET, model });
+      const radius = rng.range(0.25, 0.28) * S;   // 世界单位
+      // 记录归一化的“格空间”位置，供通行性校验与 AI 使用
+      hideSpots.push({
+        x: cx, z: cz, cellX: cell.x, cellZ: cell.y, type, radius, inset: INSET,
+        gx: cell.x + dx * INSET, gz: cell.y + dy * INSET, model
+      });
       occupied.add(cell.y * maze.w + cell.x);
     }
 
@@ -563,10 +568,10 @@
         for (const [dx, dy] of dirs4) if (maze.isFloor(x + dx, y + dy)) openCount++;
         if (openCount === 0 && rng.chance(0.62)) {
           // 内部实心墙块：树
-          makeTree(x + rng.range(-0.15, 0.15), y + rng.range(-0.15, 0.15), rng.range(0.85, 1.25), rng.chance(0.4) ? 'pine' : 'broad');
+          makeTree((x + rng.range(-0.15, 0.15)) * S, (y + rng.range(-0.15, 0.15)) * S, rng.range(0.85, 1.25), rng.chance(0.4) ? 'pine' : 'broad');
         } else if (openCount > 0 && rng.chance(0.34)) {
-          if (rng.chance(0.5)) makeTree(x, y, rng.range(0.8, 1.1), rng.chance(0.5) ? 'pine' : 'broad');
-          else makeBush(x + rng.range(-0.1, 0.1), y + rng.range(-0.1, 0.1), false);
+          if (rng.chance(0.5)) makeTree(x * S, y * S, rng.range(0.8, 1.1), rng.chance(0.5) ? 'pine' : 'broad');
+          else makeBush((x + rng.range(-0.1, 0.1)) * S, (y + rng.range(-0.1, 0.1)) * S, false);
         }
       }
     }
@@ -589,8 +594,8 @@
         let ok = true;
         for (const l of lamps) if (Math.abs(l.x - c.x) < 5 && Math.abs(l.z - c.y) < 5) { ok = false; break; }
         if (!ok) continue;
-        const lamp = makeLamp(c.x, c.y);
-        lamp.x = c.x; lamp.z = c.y;
+        const lamp = makeLamp(c.x * S, c.y * S);
+        lamp.x = c.x * S; lamp.z = c.y * S;
         lamps.push(lamp);
       }
     }
@@ -604,6 +609,7 @@
     const ringMat = new T.MeshBasicMaterial({ map: ringTex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, color: 0x7fe7d6, opacity: 0.9 });
     const ring = new T.Mesh(new T.PlaneGeometry(1, 1), ringMat);
     ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.28 * S;
     ring.visible = false;
     scene.add(ring);
     disposables.push(ring.geometry, ringMat, ringTex);
@@ -615,7 +621,8 @@
     return {
       scene, group, offX, offZ, moonLight,
       hideSpots, lamps, wallCells, ring,
-      bounds: { minX: -offX - 1.5, maxX: offX + 1.5, minZ: -offZ - 1.5, maxZ: offZ + 1.5 },
+      scale: S,
+      bounds: { minX: (-offX - 1.5) * S, maxX: (offX + 1.5) * S, minZ: (-offZ - 1.5) * S, maxZ: (offZ + 1.5) * S },
       dispose() {
         disposables.forEach((d) => { try { if (d && d.dispose) d.dispose(); } catch (e) { /* noop */ } });
         scene.traverse((o) => {

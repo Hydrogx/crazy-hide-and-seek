@@ -229,43 +229,53 @@ async function step(cdp, name, url, waitMs, evalExpr, shotName) {
     await sleep(6000);
     const out = await cdp.eval(`(() => {
       const G = window.HS.Game;
+      const S = window.HS.CONFIG.CELL_SCALE || 1;   // 1 格 = S 个世界单位
+      const W2G = (v) => v / S;                     // 世界 -> 格
+      const G2W = (v) => v * S;                     // 格 -> 世界
       const rows = [];
       for (let round = 0; round < 6; round++) {
         G.start('normal', 1);
-        const maze = G.maze, r = G.seeker.r, step = 0.13;
-        const key = (x, z) => Math.round(x / step) + ',' + Math.round(z / step);
+        const maze = G.maze;
+        const rW = G.seeker.r * S;                  // 玩家半径（世界单位）
+        const stepW = 0.13 * S;                     // 世界单位采样步长
+        const key = (x, z) => Math.round(x / stepW) + ',' + Math.round(z / stepW);
         const s = G._spawnPlayerCell();
-        const seen = new Set([key(s.x, s.y)]), q = [[s.x, s.y]];
+        const sx = G2W(s.x), sz = G2W(s.y);
+        const seen = new Set([key(sx, sz)]), q = [[sx, sz]];
         const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+        const limX0 = 0.2 * S, limX1 = G2W(maze.w - 1.2);
         while (q.length) {
           const [x, z] = q.pop();
           for (const [dx, dz] of dirs) {
-            const nx = x + dx * step, nz = z + dz * step, k = key(nx, nz);
+            const nx = x + dx * stepW, nz = z + dz * stepW, k = key(nx, nz);
             if (seen.has(k)) continue;
             seen.add(k);
-            if (nx < 0.2 || nz < 0.2 || nx > maze.w - 1.2 || nz > maze.h - 1.2) continue;
-            if (G.blocked(nx, nz, r, null)) continue;
+            if (nx < limX0 || nz < limX0 || nx > limX1 || nz > G2W(maze.h - 1.2)) continue;
+            if (G.blocked(nx, nz, G.seeker.r, null)) continue;   // blocked 收世界坐标 + 格单位半径
             q.push([nx, nz]);
           }
         }
-        // 每个地面格是否至少有一个可达点
+        // 每个地面格：格内任意世界采样点可达即算可达
         const floors = maze.floorCells();
         const unreachable = floors.filter((c) => {
-          for (let ox = -0.34; ox <= 0.341; ox += step) {
-            for (let oz = -0.34; oz <= 0.341; oz += step) {
-              if (seen.has(key(c.x + ox, c.y + oz))) return false;
+          for (let ox = -0.34; ox <= 0.341; ox += 0.13) {
+            for (let oz = -0.34; oz <= 0.341; oz += 0.13) {
+              if (seen.has(key(G2W(c.x + ox), G2W(c.y + oz)))) return false;
             }
           }
           return true;
         }).length;
-        // 相邻地面格之间的通道是否走得通
+        // 相邻地面格之间是否走得通（世界坐标下做平行线扫描）
         const floorSet = new Set(floors.map((c) => c.x + ',' + c.y));
         const passable = (a, b) => {
-          for (let off = -0.34; off <= 0.341; off += 0.04) {
-            const dx = b.x - a.x, dz = b.y - a.y, px = -dz, pz = dx;
+          const ax = G2W(a.x), az = G2W(a.y), bx = G2W(b.x), bz = G2W(b.y);
+          for (let off = -0.34 * S; off <= 0.341 * S; off += 0.04 * S) {
+            const dx = bx - ax, dz = bz - az, px = -dz, pz = dx;
+            const len = Math.hypot(px, pz) || 1;
+            const ox = (px / len) * off, oz = (pz / len) * off;
             let ok = true;
             for (let t = 0; t <= 1.0001; t += 0.1) {
-              if (G.blocked(a.x + dx * t + px * off, a.y + dz * t + pz * off, r, null)) { ok = false; break; }
+              if (G.blocked(ax + dx * t + ox, az + dz * t + oz, G.seeker.r, null)) { ok = false; break; }
             }
             if (ok) return true;
           }
@@ -280,16 +290,18 @@ async function step(cdp, name, url, waitMs, evalExpr, shotName) {
             if (!passable(c, n)) choked++;
           }
         }
-        // 躲藏点是否都能走到抓取范围内
-        const pts = [...seen].map((k) => k.split(',').map((v) => +v * step));
+        // 躲藏点：玩家能否走到抓取范围内（格单位比较）
+        const pts = [...seen].map((k) => k.split(',').map((v) => W2G(+v * stepW)));
+        const grabRangeGrid = 1.65;
         let spotsUnreachable = 0;
         for (const sp of G.hideSpots) {
+          const gx = sp.gx != null ? sp.gx : W2G(sp.x), gz = sp.gz != null ? sp.gz : W2G(sp.z);
           let best = 1e9;
           for (const [x, z] of pts) {
-            const d = Math.hypot(x - sp.x, z - sp.z);
+            const d = Math.hypot(x - gx, z - gz);
             if (d < best) best = d;
           }
-          if (best > 1.65) spotsUnreachable++;
+          if (best > grabRangeGrid) spotsUnreachable++;
         }
         rows.push({ floors: floors.length, unreachable, pairs, choked, spotsUnreachable, spots: G.hideSpots.length });
       }
